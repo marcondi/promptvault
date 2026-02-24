@@ -30,6 +30,12 @@ O app usa a tabela **prompt_categories** (separada da agenda financeira). No Sup
 2. Cole e execute o conteúdo do arquivo **supabase-prompt-categories.sql** (na raiz do projeto).
 3. Pronto: criar categorias no app passa a funcionar.
 
+### Supabase: foto de preview do prompt (opcional)
+Para poder enviar uma imagem de exemplo em cada prompt:
+
+1. **SQL Editor:** execute o arquivo **supabase-prompt-preview-column.sql** (adiciona a coluna `preview_image_url` na tabela `prompts`).
+2. **Storage:** em **Storage** → **New bucket** → nome **prompt-previews**, marque **Public bucket** → Create. Assim as fotos ficam acessíveis por URL.
+
 ---
 
 ## Deploy (GitHub + Vercel)

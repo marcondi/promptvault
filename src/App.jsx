@@ -85,6 +85,7 @@ const IMoon   = () => <Ic d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>;
 const IClose  = () => <Ic d="M18 6L6 18M6 6l12 12"/>;
 const ISave   = () => <Ic d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8"/>;
 const ISpark  = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.09 6.26L20.18 10l-6.09 1.74L12 18l-2.09-6.26L3.82 10l6.09-1.74z"/></svg>;
+const IPhoto  = () => <Ic d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>;
 const IGoog   = () => (
   <svg width="20" height="20" viewBox="0 0 24 24">
     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -261,11 +262,6 @@ const Login = ({dark, setDark}) => {
           </button>
         </div>
         <p style={{textAlign:"center",color:"var(--muted)",fontFamily:"var(--mono)",fontSize:11,marginTop:24}}>Autenticação segura via Supabase + Google OAuth</p>
-        <p style={{textAlign:"center",color:"var(--muted)",fontFamily:"var(--mono)",fontSize:10,marginTop:12,padding:"8px 12px",background:"var(--card)",borderRadius:8,border:"1px solid var(--border)"}}>
-          Para abrir o PromptVault após o login, adicione esta URL no Supabase:<br/>
-          <strong style={{color:"var(--accent)",wordBreak:"break-all"}}>{typeof window !== 'undefined' ? window.location.origin + (window.location.pathname || '/') : ''}</strong><br/>
-          <span style={{fontSize:9}}>Supabase → Authentication → URL Configuration → Redirect URLs</span>
-        </p>
       </div>
     </div>
   );
@@ -332,6 +328,9 @@ const Dashboard = ({setRoute, setEditingPrompt, userId, showToast}) => {
         : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:16}}>
             {filtered.map((p,i)=>(
               <div key={p.id} className="card animate-in" style={{animationDelay:`${i*.04}s`,display:"flex",flexDirection:"column",gap:12}}>
+                {p.preview_image_url && (
+                  <img src={p.preview_image_url} alt="" style={{width:"100%",height:120,objectFit:"cover",borderRadius:8,marginBottom:4}}/>
+                )}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                   <h3 style={{fontWeight:700,fontSize:15,lineHeight:1.3,flex:1}}>{p.title}</h3>
                   <span className="tag">{catName(p.category_id)}</span>
@@ -351,18 +350,48 @@ const Dashboard = ({setRoute, setEditingPrompt, userId, showToast}) => {
 };
 
 // ─── Prompt Form ──────────────────────────────────────────────────────────────
+const BUCKET_PREVIEWS = "prompt-previews";
+
 const PromptForm = ({setRoute, editingPrompt, userId, showToast}) => {
   const [title,setTitle]=useState(editingPrompt?.title||"");
   const [catId,setCatId]=useState(editingPrompt?.category_id||"");
   const [content,setContent]=useState(editingPrompt?.content||"");
+  const [previewFile,setPreviewFile]=useState(null);
+  const [previewUrl,setPreviewUrl]=useState(editingPrompt?.preview_image_url||"");
+  const [previewRemoved,setPreviewRemoved]=useState(false);
   const [cats,setCats]=useState([]); const [saving,setSaving]=useState(false);
 
   useEffect(()=>{ sb.from("prompt_categories").select("*").eq("user_id",userId).order("name").then(({data})=>setCats(data||[])); },[]);
 
+  const onFileChange = (e) => {
+    const f = e.target.files?.[0];
+    if (!f || !f.type.startsWith("image/")) return;
+    if (previewUrl && previewFile) URL.revokeObjectURL(previewUrl);
+    setPreviewFile(f);
+    setPreviewUrl(URL.createObjectURL(f));
+    setPreviewRemoved(false);
+  };
+
+  const removePreview = () => {
+    if (previewFile && previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewFile(null);
+    setPreviewUrl("");
+    setPreviewRemoved(true);
+  };
+
   const save = async () => {
     if(!title.trim()||!content.trim()){showToast("Título e conteúdo obrigatórios","error");return;}
     setSaving(true);
-    const payload = {title, content, category_id: catId||null, user_id: userId};
+    let preview_image_url = previewRemoved ? null : (editingPrompt?.preview_image_url || null);
+    if (previewFile) {
+      const ext = previewFile.name.split(".").pop() || "jpg";
+      const path = `${userId}/${Date.now()}-preview.${ext}`;
+      const { error: upErr } = await sb.storage.from(BUCKET_PREVIEWS).upload(path, previewFile, { upsert: true });
+      if (upErr) { showToast("Erro ao enviar foto: "+upErr.message,"error"); setSaving(false); return; }
+      const { data: pub } = sb.storage.from(BUCKET_PREVIEWS).getPublicUrl(path);
+      preview_image_url = pub.publicUrl;
+    }
+    const payload = { title, content, category_id: catId||null, user_id: userId, preview_image_url };
     const {error} = editingPrompt
       ? await sb.from("prompts").update(payload).eq("id",editingPrompt.id)
       : await sb.from("prompts").insert(payload);
@@ -385,6 +414,22 @@ const PromptForm = ({setRoute, editingPrompt, userId, showToast}) => {
           </select>
         </div>
         <div className="field"><label className="label">Conteúdo</label><textarea placeholder="Escreva o prompt. Use {{variavel}} para partes dinâmicas..." value={content} onChange={e=>setContent(e.target.value)} style={{minHeight:220}}/></div>
+        <div className="field">
+          <label className="label">Foto de preview</label>
+          <p style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--text2)",marginBottom:8}}>Envie uma imagem de exemplo do resultado do prompt (ex.: antes/depois de edição)</p>
+          <div style={{display:"flex",flexWrap:"wrap",gap:12,alignItems:"flex-start"}}>
+            <label style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius)",cursor:"pointer",fontFamily:"var(--mono)",fontSize:12}}>
+              <IPhoto/> Escolher imagem
+              <input type="file" accept="image/*" onChange={onFileChange} style={{display:"none"}}/>
+            </label>
+            {previewUrl && (
+              <div style={{position:"relative",flex:"1 1 200px"}}>
+                <img src={previewUrl} alt="Preview" style={{maxWidth:280,maxHeight:160,objectFit:"contain",borderRadius:8,border:"1px solid var(--border)"}}/>
+                <button type="button" onClick={removePreview} style={{position:"absolute",top:4,right:4,background:"rgba(0,0,0,.7)",color:"#fff",border:"none",borderRadius:6,width:28,height:28,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><IClose s={14}/></button>
+              </div>
+            )}
+          </div>
+        </div>
         <div style={{display:"flex",gap:12,justifyContent:"flex-end"}}>
           <button className="btn btn-secondary" onClick={()=>setRoute("dashboard")}>Cancelar</button>
           <button className="btn btn-primary" onClick={save} disabled={saving}>
