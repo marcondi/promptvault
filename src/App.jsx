@@ -205,7 +205,7 @@ const Topbar = ({route, setRoute, user, onLogout, dark, setDark, onPRD}) => (
         <span style={{fontWeight:800,fontSize:17,letterSpacing:"-.01em"}}>PromptVault</span>
       </div>
       <nav style={{display:"flex",gap:2,flex:1}}>
-        {[["Dashboard","dashboard"],["Categorias","categories"],["Exportar","export"]].map(([l,r])=>(
+        {[["Dashboard","dashboard"],["Categorias","prompt_categories"],["Exportar","export"]].map(([l,r])=>(
           <button key={r} onClick={()=>setRoute(r)} style={{background:route===r?"rgba(232,255,71,.1)":"none",border:"none",color:route===r?"var(--accent)":"var(--text2)",fontFamily:"var(--display)",fontWeight:600,fontSize:12,cursor:"pointer",padding:"6px 14px",borderRadius:8,transition:"all .2s",textTransform:"uppercase",letterSpacing:".05em"}}>{l}</button>
         ))}
       </nav>
