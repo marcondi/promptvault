@@ -205,7 +205,7 @@ const Topbar = ({route, setRoute, user, onLogout, dark, setDark, onPRD}) => (
         <span style={{fontWeight:800,fontSize:17,letterSpacing:"-.01em"}}>PromptVault</span>
       </div>
       <nav style={{display:"flex",gap:2,flex:1}}>
-        {[["Dashboard","dashboard"],["Categorias","categories"],["Exportar","export"]].map(([l,r])=>(
+        {[["Dashboard","dashboard"],["Categorias","categories"],["Exportar","export"],["Ger. IMG","gerador-img"]].map(([l,r])=>(
           <button key={r} onClick={()=>setRoute(r)} style={{background:route===r?"rgba(232,255,71,.1)":"none",border:"none",color:route===r?"var(--accent)":"var(--text2)",fontFamily:"var(--display)",fontWeight:600,fontSize:12,cursor:"pointer",padding:"6px 14px",borderRadius:8,transition:"all .2s",textTransform:"uppercase",letterSpacing:".05em"}}>{l}</button>
         ))}
       </nav>
@@ -547,6 +547,130 @@ const Export = ({setRoute, userId, showToast}) => {
   );
 };
 
+// ─── Gerador de Imagens ───────────────────────────────────────────────────────
+const GEMINI_KEY = "AIzaSyBALL7VubyFSTy7VqkRoObSh09Xv-44Cb8";
+
+const GeradorImg = ({setRoute, userId, showToast}) => {
+  const [prompts,setPrompts]=useState([]); const [selPrompt,setSelPrompt]=useState(null);
+  const [promptText,setPromptText]=useState(""); const [photoFile,setPhotoFile]=useState(null);
+  const [photoPreview,setPhotoPreview]=useState(""); const [result,setResult]=useState(null);
+  const [loading,setLoading]=useState(false); const [stage,setStage]=useState("idle");
+  const [dots,setDots]=useState(".");
+
+  useEffect(()=>{ sb.from("prompts").select("id,title,content").eq("user_id",userId).order("title").then(({data})=>setPrompts(data||[])); },[]);
+  useEffect(()=>{ if(stage!=="loading")return; const id=setInterval(()=>setDots(d=>d.length>=3?".":d+"."),500); return()=>clearInterval(id); },[stage]);
+
+  const onPhoto = e => {
+    const f = e.target.files?.[0];
+    if(!f||!f.type.startsWith("image/")) return;
+    setPhotoFile(f);
+    setPhotoPreview(URL.createObjectURL(f));
+    setResult(null);
+  };
+
+  const toBase64 = file => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(file); });
+
+  const generate = async () => {
+    if(!promptText.trim()){ showToast("Escreva ou selecione um prompt","error"); return; }
+    if(!photoFile){ showToast("Envie uma foto sua","error"); return; }
+    setLoading(true); setStage("loading"); setResult(null);
+    try {
+      const b64 = await toBase64(photoFile);
+      const mime = photoFile.type || "image/jpeg";
+      const body = {
+        contents:[{parts:[
+          {text: promptText + "\n\nUse the uploaded photo as the face/person reference."},
+          {inline_data:{mime_type:mime,data:b64}}
+        ]}],
+        generationConfig:{responseModalities:["TEXT","IMAGE"]}
+      };
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${GEMINI_KEY}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const d = await r.json();
+      if(d.error) throw new Error(d.error.message);
+      const parts = d.candidates?.[0]?.content?.parts||[];
+      const imgPart = parts.find(p=>p.inlineData);
+      if(!imgPart) throw new Error("Nenhuma imagem retornada. Tente um prompt diferente.");
+      setResult(`data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`);
+      setStage("idle");
+    } catch(e){ showToast("Erro: "+e.message,"error"); setStage("idle"); }
+    setLoading(false);
+  };
+
+  const download = () => {
+    const a=document.createElement("a"); a.href=result; a.download="promptvault-gerado.png";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+
+  return (
+    <div style={{maxWidth:900,margin:"0 auto",padding:"40px 24px"}}>
+      <div style={{marginBottom:32}}>
+        <h2 style={{fontSize:26,fontWeight:800,letterSpacing:"-.02em"}}>Gerador de Imagens</h2>
+        <p style={{color:"var(--text2)",fontFamily:"var(--mono)",fontSize:12,marginTop:4}}>Selecione um prompt do vault, envie sua foto e gere com IA</p>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
+        {/* Coluna Esquerda */}
+        <div style={{display:"flex",flexDirection:"column",gap:20}}>
+
+          {/* Selecionar Prompt */}
+          <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:16,padding:24}}>
+            <label className="label">1. Selecionar Prompt do Vault</label>
+            <select value={selPrompt||""} onChange={e=>{const p=prompts.find(x=>x.id===e.target.value);setSelPrompt(e.target.value);setPromptText(p?.content||"");}} style={{marginBottom:12}}>
+              <option value="">Escolha um prompt...</option>
+              {prompts.map(p=><option key={p.id} value={p.id}>{p.title}</option>)}
+            </select>
+            <label className="label" style={{marginTop:8}}>Ou escreva/edite o prompt</label>
+            <textarea value={promptText} onChange={e=>setPromptText(e.target.value)} placeholder="Descreva como quer que a imagem seja gerada..." style={{minHeight:140,fontSize:12}}/>
+          </div>
+
+          {/* Upload Foto */}
+          <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:16,padding:24}}>
+            <label className="label">2. Sua Foto de Referência</label>
+            <label style={{display:"flex",alignItems:"center",gap:10,padding:"12px 18px",background:"var(--surface)",border:"2px dashed var(--border)",borderRadius:10,cursor:"pointer",fontFamily:"var(--mono)",fontSize:12,color:"var(--text2)",transition:"border-color .2s",justifyContent:"center"}}>
+              <IPhoto/> {photoFile ? photoFile.name : "Clique para escolher foto"}
+              <input type="file" accept="image/*" onChange={onPhoto} style={{display:"none"}}/>
+            </label>
+            {photoPreview && <img src={photoPreview} alt="preview" style={{width:"100%",maxHeight:200,objectFit:"cover",borderRadius:10,marginTop:12,border:"1px solid var(--border)"}}/>}
+          </div>
+
+          {/* Botão Gerar */}
+          <button className="btn btn-primary" style={{width:"100%",justifyContent:"center",padding:"14px",fontSize:14}} onClick={generate} disabled={loading}>
+            {loading
+              ? <><div className="spinner spinner-sm" style={{borderTopColor:"#0a0a0b"}}/> Gerando{dots}</>
+              : <><ISpark/> Gerar Imagem com IA</>
+            }
+          </button>
+        </div>
+
+        {/* Coluna Direita — Resultado */}
+        <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:16,padding:24,display:"flex",flexDirection:"column",gap:16,minHeight:400}}>
+          <label className="label">3. Resultado</label>
+          {!result && !loading && (
+            <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,color:"var(--muted)"}}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{opacity:.4}}><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+              <p style={{fontFamily:"var(--mono)",fontSize:12,textAlign:"center"}}>A imagem gerada aparecerá aqui</p>
+            </div>
+          )}
+          {loading && (
+            <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+              <div className="spinner"/>
+              <p style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--text2)"}}>Gerando sua imagem{dots}</p>
+              <p style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)"}}>Pode levar até 30 segundos</p>
+            </div>
+          )}
+          {result && !loading && (
+            <>
+              <img src={result} alt="Gerado" style={{width:"100%",borderRadius:12,border:"1px solid var(--border)"}}/>
+              <button className="btn btn-primary" style={{justifyContent:"center"}} onClick={download}><IDown/> Baixar Imagem</button>
+              <button className="btn btn-ghost btn-sm" style={{justifyContent:"center"}} onClick={()=>{setResult(null);setStage("idle");}}>Gerar novamente</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── App Root ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [user,setUser]=useState(null); const [route,setRoute]=useState("dashboard");
@@ -616,6 +740,7 @@ export default function App() {
       {route==="new-prompt" && <PromptForm setRoute={setRoute} editingPrompt={editing} userId={user.id} showToast={showToast}/>}
       {route==="categories" && <Categories setRoute={setRoute} userId={user.id} showToast={showToast}/>}
       {route==="export"     && <Export setRoute={setRoute} userId={user.id} showToast={showToast}/>}
+      {route==="gerador-img"&& <GeradorImg setRoute={setRoute} userId={user.id} showToast={showToast}/>}
     </main>
     {prd && <PRDModal onClose={()=>setPrd(false)} onSave={saveVaultFromPRD}/>}
     {toast && <Toast msg={toast.msg} type={toast.type} onHide={()=>setToast(null)}/>}
