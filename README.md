@@ -21,4 +21,25 @@ npm run dev
 Depois abra no navegador: **http://localhost:5173**
 
 ### Login
-Use qualquer e-mail + senha com 6+ caracteres.
+Entre com sua conta Google (OAuth via Supabase).
+
+### Supabase: tabela de categorias (obrigatório uma vez)
+O app usa a tabela **prompt_categories** (separada da agenda financeira). No Supabase:
+
+1. Vá em **SQL Editor** → **New query**.
+2. Cole e execute o conteúdo do arquivo **supabase-prompt-categories.sql** (na raiz do projeto).
+3. Pronto: criar categorias no app passa a funcionar.
+
+---
+
+## Deploy (GitHub + Vercel)
+
+1. **Crie um repositório no GitHub** (github.com → New repository, ex.: `promptvault`).
+2. **Conecte e envie o código:**
+   ```bash
+   git remote add origin https://github.com/SEU_USUARIO/promptvault.git
+   git branch -M main
+   git push -u origin main
+   ```
+3. **Vercel:** [vercel.com](https://vercel.com) → Import Git Repository → selecione o repo → Deploy.
+4. **Supabase:** Após o deploy, adicione a URL da Vercel em **Authentication → URL Configuration → Redirect URLs** (ex.: `https://promptvault-xxx.vercel.app` e `https://promptvault-xxx.vercel.app/`).

@@ -281,7 +281,7 @@ const Dashboard = ({setRoute, setEditingPrompt, userId, showToast}) => {
     setLoading(true);
     const [rp,rc] = await Promise.all([
       sb.from("prompts").select("*").eq("user_id",userId).order("created_at",{ascending:false}),
-      sb.from("categories").select("*").eq("user_id",userId).eq("type","prompt").order("name")
+      sb.from("prompt_categories").select("*").eq("user_id",userId).order("name")
     ]);
     setPrompts(rp.data||[]); setCats(rc.data||[]); setLoading(false);
   },[userId]);
@@ -357,7 +357,7 @@ const PromptForm = ({setRoute, editingPrompt, userId, showToast}) => {
   const [content,setContent]=useState(editingPrompt?.content||"");
   const [cats,setCats]=useState([]); const [saving,setSaving]=useState(false);
 
-  useEffect(()=>{ sb.from("categories").select("*").eq("user_id",userId).eq("type","prompt").order("name").then(({data})=>setCats(data||[])); },[]);
+  useEffect(()=>{ sb.from("prompt_categories").select("*").eq("user_id",userId).order("name").then(({data})=>setCats(data||[])); },[]);
 
   const save = async () => {
     if(!title.trim()||!content.trim()){showToast("Título e conteúdo obrigatórios","error");return;}
@@ -402,11 +402,11 @@ const Categories = ({setRoute, userId, showToast}) => {
   const [editId,setEditId]=useState(null); const [editName,setEditName]=useState("");
   const [loading,setLoading]=useState(true);
 
-  useEffect(()=>{ sb.from("categories").select("*").eq("user_id",userId).eq("type","prompt").order("name").then(({data})=>{setCats(data||[]);setLoading(false);}); },[]);
+  useEffect(()=>{ sb.from("prompt_categories").select("*").eq("user_id",userId).order("name").then(({data})=>{setCats(data||[]);setLoading(false);}); },[]);
 
   const add = async () => {
     if(!name.trim()) return;
-    const {data,error} = await sb.from("categories").insert({name:name.trim(),user_id:userId,type:"prompt"}).select().single();
+    const {data,error} = await sb.from("prompt_categories").insert({name:name.trim(),user_id:userId}).select().single();
     if(error){showToast("Erro: "+error.message,"error");return;}
     setCats(prev=>[...prev,data].sort((a,b)=>a.name.localeCompare(b.name)));
     setName(""); showToast("Categoria criada!","success");
@@ -414,14 +414,14 @@ const Categories = ({setRoute, userId, showToast}) => {
 
   const del = async id => {
     if(!confirm("Excluir esta categoria?")) return;
-    const {error} = await sb.from("categories").delete().eq("id",id);
+    const {error} = await sb.from("prompt_categories").delete().eq("id",id);
     if(error){showToast("Erro: "+error.message,"error");return;}
     setCats(prev=>prev.filter(c=>c.id!==id)); showToast("Categoria excluída","success");
   };
 
   const sv = async () => {
     if(!editName.trim()) return;
-    const {error} = await sb.from("categories").update({name:editName.trim()}).eq("id",editId);
+    const {error} = await sb.from("prompt_categories").update({name:editName.trim()}).eq("id",editId);
     if(error){showToast("Erro: "+error.message,"error");return;}
     setCats(prev=>prev.map(c=>c.id===editId?{...c,name:editName.trim()}:c));
     setEditId(null); showToast("Categoria atualizada!","success");
@@ -463,7 +463,7 @@ const Export = ({setRoute, userId, showToast}) => {
 
   useEffect(()=>{
     Promise.all([
-      sb.from("categories").select("*").eq("user_id",userId).eq("type","prompt").order("name"),
+      sb.from("prompt_categories").select("*").eq("user_id",userId).order("name"),
       sb.from("prompts").select("*").eq("user_id",userId)
     ]).then(([rc,rp])=>{setCats(rc.data||[]);setPrompts(rp.data||[]);});
   },[]);
