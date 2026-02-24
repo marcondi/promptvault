@@ -361,7 +361,7 @@ const PromptForm = ({setRoute, editingPrompt, userId, showToast}) => {
   const [previewRemoved,setPreviewRemoved]=useState(false);
   const [cats,setCats]=useState([]); const [saving,setSaving]=useState(false);
 
-  useEffect(()=>{ sb.from("prompt_categories").select("*").eq("user_id",userId).order("name").then(({data})=>setCats(data||[])); },[]);
+  useEffect(()=>{ sb.from("categories").select("*").eq("user_id",userId).order("name").then(({data})=>setCats(data||[])); },[]);
 
   const onFileChange = (e) => {
     const f = e.target.files?.[0];
