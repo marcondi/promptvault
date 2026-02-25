@@ -582,9 +582,8 @@ const GeradorImg = ({setRoute, userId, showToast}) => {
           {text: promptText + "\n\nUse the uploaded photo as the face/person reference."},
           {inline_data:{mime_type:mime,data:b64}}
         ]}],
-        generationConfig:{responseModalities:["TEXT","IMAGE"]}
-      };
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation-exp:generateContent?key=${GEMINI_KEY}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+generationConfig:{responseModalities:["image","text"]}      };
+const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_KEY}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       const d = await r.json();
       if(d.error) throw new Error(d.error.message);
       const parts = d.candidates?.[0]?.content?.parts||[];
