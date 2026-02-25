@@ -584,7 +584,7 @@ const GeradorImg = ({setRoute, userId, showToast}) => {
         ]}],
         generationConfig:{responseModalities:["TEXT","IMAGE"]}
       };
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${GEMINI_KEY}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_KEY}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       const d = await r.json();
       if(d.error) throw new Error(d.error.message);
       const parts = d.candidates?.[0]?.content?.parts||[];
