@@ -548,7 +548,7 @@ const Export = ({setRoute, userId, showToast}) => {
 };
 
 // ─── Gerador de Imagens ───────────────────────────────────────────────────────
-const GEMINI_KEY = "AIzaSyBALL7VubyFSTy7VqkRoObSh09Xv-44Cb8";
+const GEMINI_KEY = import.meta.env.VITE_GEMINI_KEY;
 
 const GeradorImg = ({setRoute, userId, showToast}) => {
   const [prompts,setPrompts]=useState([]); const [selPrompt,setSelPrompt]=useState(null);
