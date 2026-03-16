@@ -578,10 +578,14 @@ const GeradorImg = ({setRoute, userId, showToast}) => {
       const encoded = encodeURIComponent(promptText);
       const seed = Math.floor(Math.random() * 999999);
       const url = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&model=flux`;
-      const r = await fetch(url);
-      if(!r.ok) throw new Error("Falha ao gerar imagem. Tente novamente.");
-      const blob = await r.blob();
-      setResult(URL.createObjectURL(blob));
+      // Aguarda a imagem carregar via elemento Image antes de exibir
+      await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = resolve;
+        img.onerror = () => reject(new Error("Falha ao carregar imagem. Tente novamente."));
+        img.src = url;
+      });
+      setResult(url);
       setStage("idle");
     } catch(e){ showToast("Erro: "+e.message,"error"); setStage("idle"); }
     setLoading(false);
