@@ -574,29 +574,26 @@ const GeradorImg = ({setRoute, userId, showToast}) => {
     if(!promptText.trim()){ showToast("Escreva ou selecione um prompt","error"); return; }
     setLoading(true); setStage("loading"); setResult(null);
     try {
-      const encoded = encodeURIComponent(promptText);
+      // Pollinations.ai via POST — suporta prompts longos
       const seed = Math.floor(Math.random() * 999999);
-      const url = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&model=flux`;
-      console.log("[GeradorImg] URL gerada:", url);
-
-      // Faz fetch com timeout de 90s
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 90000);
-      const r = await fetch(url, { signal: controller.signal });
+      const r = await fetch("https://image.pollinations.ai/prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: promptText, width: 1024, height: 1024, seed, nologo: true, model: "flux" }),
+        signal: controller.signal
+      });
       clearTimeout(timeout);
-      console.log("[GeradorImg] fetch ok, status:", r.status, "type:", r.headers.get("content-type"));
-
-      if (!r.ok) throw new Error(`Servidor retornou ${r.status}`);
+      if (!r.ok) {
+        const errText = await r.text();
+        throw new Error(`Erro ${r.status}: ${errText.slice(0,120)}`);
+      }
       const blob = await r.blob();
-      console.log("[GeradorImg] blob size:", blob.size, "type:", blob.type);
-
-      if (blob.size < 1000) throw new Error("Imagem inválida recebida (muito pequena).");
-      const objUrl = URL.createObjectURL(blob);
-      console.log("[GeradorImg] objectURL criado:", objUrl);
-      setResult(objUrl);
+      if (blob.size < 1000) throw new Error("Imagem inválida. Tente um prompt diferente.");
+      setResult(URL.createObjectURL(blob));
       setStage("idle");
     } catch(e){
-      console.error("[GeradorImg] ERRO:", e);
       showToast("Erro: "+e.message,"error");
       setStage("idle");
     }
