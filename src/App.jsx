@@ -574,20 +574,32 @@ const GeradorImg = ({setRoute, userId, showToast}) => {
     if(!promptText.trim()){ showToast("Escreva ou selecione um prompt","error"); return; }
     setLoading(true); setStage("loading"); setResult(null);
     try {
-      // Pollinations.ai — gratuito, sem API key, sem cota
       const encoded = encodeURIComponent(promptText);
       const seed = Math.floor(Math.random() * 999999);
       const url = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&model=flux`;
-      // Aguarda a imagem carregar via elemento Image antes de exibir
-      await new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = resolve;
-        img.onerror = () => reject(new Error("Falha ao carregar imagem. Tente novamente."));
-        img.src = url;
-      });
-      setResult(url);
+      console.log("[GeradorImg] URL gerada:", url);
+
+      // Faz fetch com timeout de 90s
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90000);
+      const r = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+      console.log("[GeradorImg] fetch ok, status:", r.status, "type:", r.headers.get("content-type"));
+
+      if (!r.ok) throw new Error(`Servidor retornou ${r.status}`);
+      const blob = await r.blob();
+      console.log("[GeradorImg] blob size:", blob.size, "type:", blob.type);
+
+      if (blob.size < 1000) throw new Error("Imagem inválida recebida (muito pequena).");
+      const objUrl = URL.createObjectURL(blob);
+      console.log("[GeradorImg] objectURL criado:", objUrl);
+      setResult(objUrl);
       setStage("idle");
-    } catch(e){ showToast("Erro: "+e.message,"error"); setStage("idle"); }
+    } catch(e){
+      console.error("[GeradorImg] ERRO:", e);
+      showToast("Erro: "+e.message,"error");
+      setStage("idle");
+    }
     setLoading(false);
   };
 
