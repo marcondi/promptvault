@@ -574,27 +574,26 @@ const GeradorImg = ({setRoute, userId, showToast}) => {
     if(!promptText.trim()){ showToast("Escreva ou selecione um prompt","error"); return; }
     setLoading(true); setStage("loading"); setResult(null);
     try {
-      // Pollinations.ai via POST — suporta prompts longos
+      // Pollinations.ai — GET é o único endpoint suportado
+      // Trunca para 500 chars e ativa enhance=true para prompts longos
+      const prompt = promptText.trim().slice(0, 500);
+      const encoded = encodeURIComponent(prompt);
       const seed = Math.floor(Math.random() * 999999);
+      const url = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&model=flux&enhance=true`;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 90000);
-      const r = await fetch("https://image.pollinations.ai/prompt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: promptText, width: 1024, height: 1024, seed, nologo: true, model: "flux" }),
-        signal: controller.signal
-      });
+      const r = await fetch(url, { signal: controller.signal });
       clearTimeout(timeout);
-      if (!r.ok) {
-        const errText = await r.text();
-        throw new Error(`Erro ${r.status}: ${errText.slice(0,120)}`);
-      }
+      if (!r.ok) throw new Error(`Servidor retornou ${r.status}. Tente novamente.`);
+      const contentType = r.headers.get("content-type") || "";
+      if (!contentType.startsWith("image/")) throw new Error("Resposta inesperada do servidor. Tente novamente.");
       const blob = await r.blob();
       if (blob.size < 1000) throw new Error("Imagem inválida. Tente um prompt diferente.");
       setResult(URL.createObjectURL(blob));
       setStage("idle");
     } catch(e){
-      showToast("Erro: "+e.message,"error");
+      const msg = e.name === "AbortError" ? "Tempo esgotado (90s). Tente novamente." : e.message;
+      showToast("Erro: "+msg,"error");
       setStage("idle");
     }
     setLoading(false);
