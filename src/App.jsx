@@ -572,25 +572,16 @@ const GeradorImg = ({setRoute, userId, showToast}) => {
 
   const generate = async () => {
     if(!promptText.trim()){ showToast("Escreva ou selecione um prompt","error"); return; }
-    if(!photoFile){ showToast("Envie uma foto sua","error"); return; }
     setLoading(true); setStage("loading"); setResult(null);
     try {
-      const b64 = await toBase64(photoFile);
-      const mime = photoFile.type || "image/jpeg";
-      const body = {
-        contents:[{parts:[
-          {text: promptText + "\n\nUse the uploaded photo as the face/person reference."},
-          {inline_data:{mime_type:mime,data:b64}}
-        ]}],
-        generationConfig:{responseModalities:["IMAGE","TEXT"]}
-      };
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${GEMINI_KEY}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-      const d = await r.json();
-      if(d.error) throw new Error(d.error.message);
-      const parts = d.candidates?.[0]?.content?.parts||[];
-      const imgPart = parts.find(p=>p.inlineData);
-      if(!imgPart) throw new Error("Nenhuma imagem retornada. Tente um prompt diferente.");
-      setResult(`data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`);
+      // Pollinations.ai — gratuito, sem API key, sem cota
+      const encoded = encodeURIComponent(promptText);
+      const seed = Math.floor(Math.random() * 999999);
+      const url = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&model=flux`;
+      const r = await fetch(url);
+      if(!r.ok) throw new Error("Falha ao gerar imagem. Tente novamente.");
+      const blob = await r.blob();
+      setResult(URL.createObjectURL(blob));
       setStage("idle");
     } catch(e){ showToast("Erro: "+e.message,"error"); setStage("idle"); }
     setLoading(false);
