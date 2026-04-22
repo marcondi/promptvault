@@ -578,6 +578,27 @@ const GeradorImg = ({setRoute, userId, showToast}) => {
   const toBase64 = file => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(file); });
 
   /**
+   * Redimensiona a imagem para no máximo maxPx antes de converter para base64.
+   * Reduz o payload de ~3MB para ~80KB, evitando o "Failed to fetch" na HF API.
+   */
+  const resizeAndEncode = (file, maxPx = 512) => new Promise((res, rej) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      res(canvas.toDataURL("image/jpeg", 0.85).split(",")[1]);
+    };
+    img.onerror = rej;
+    img.src = url;
+  });
+
+  /**
    * Faz a chamada à HF Inference API com retry automático se o modelo
    * estiver carregando (HTTP 503 com estimated_time).
    */
@@ -606,7 +627,7 @@ const GeradorImg = ({setRoute, userId, showToast}) => {
       if (photoFile) {
         // ── img2img: instruct-pix2pix ──────────────────────────────────────
         // Envia a imagem em base64 + o prompt como instrução de transformação
-        const b64 = await toBase64(photoFile);
+        const b64 = await resizeAndEncode(photoFile); // redimensiona para 512px antes de enviar
         const r = await hfFetch(HF_IMG2IMG, {
           inputs: b64,
           parameters: {
