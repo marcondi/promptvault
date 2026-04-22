@@ -548,7 +548,14 @@ const Export = ({setRoute, userId, showToast}) => {
 };
 
 // ─── Gerador de Imagens ───────────────────────────────────────────────────────
-const GEMINI_KEY = import.meta.env.VITE_GEMINI_KEY;
+// Hugging Face: token gratuito em huggingface.co → Settings → Access Tokens
+// Adicionar como VITE_HF_KEY no Vercel (Environment Variables)
+const HF_KEY = import.meta.env.VITE_HF_KEY;
+
+// Modelo img2img (com foto de referência): instruct-pix2pix
+const HF_IMG2IMG = "https://api-inference.huggingface.co/models/timbrooks/instruct-pix2pix";
+// Modelo text-to-image (sem foto): FLUX.1-schnell (rápido e gratuito)
+const HF_TXT2IMG = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell";
 
 const GeradorImg = ({setRoute, userId, showToast}) => {
   const [prompts,setPrompts]=useState([]); const [selPrompt,setSelPrompt]=useState(null);
@@ -570,47 +577,56 @@ const GeradorImg = ({setRoute, userId, showToast}) => {
 
   const toBase64 = file => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(file); });
 
+  /**
+   * Faz a chamada à HF Inference API com retry automático se o modelo
+   * estiver carregando (HTTP 503 com estimated_time).
+   */
+  const hfFetch = async (url, body, retries = 3, delayMs = 20000) => {
+    const headers = { "Authorization": "Bearer " + HF_KEY, "Content-Type": "application/json" };
+    for (let i = 0; i < retries; i++) {
+      const r = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+      if (r.ok) return r;
+      if (r.status === 503) {
+        const j = await r.json().catch(() => ({}));
+        const wait = (j.estimated_time || 20) * 1000;
+        if (i < retries - 1) { await new Promise(res => setTimeout(res, Math.min(wait, delayMs))); continue; }
+        throw new Error("Modelo ainda carregando. Tente novamente em alguns segundos.");
+      }
+      const errJson = await r.json().catch(() => ({}));
+      throw new Error(errJson?.error || "Erro da API: " + r.status);
+    }
+  };
+
   const generate = async () => {
     if(!promptText.trim()){ showToast("Escreva ou selecione um prompt","error"); return; }
-    if(!GEMINI_KEY){ showToast("VITE_GEMINI_KEY não configurada","error"); return; }
+    if(!HF_KEY){ showToast("VITE_HF_KEY não configurada no Vercel","error"); return; }
     setLoading(true); setStage("loading"); setResult(null);
     try {
-      // Monta as partes da requisição
-      const parts = [];
-
-      // Se houver foto de referência, envia como inlineData antes do prompt
-      if(photoFile) {
+      let blob;
+      if (photoFile) {
+        // ── img2img: instruct-pix2pix ──────────────────────────────────────
+        // Envia a imagem em base64 + o prompt como instrução de transformação
         const b64 = await toBase64(photoFile);
-        parts.push({ inlineData: { mimeType: photoFile.type, data: b64 } });
-        // Instrui o modelo a usar a pessoa da foto como referência
-        parts.push({ text: `Use the person in the reference photo above as the subject. Apply the following style/scene to them:\n\n${promptText.trim()}` });
+        const r = await hfFetch(HF_IMG2IMG, {
+          inputs: b64,
+          parameters: {
+            prompt: promptText.trim(),
+            num_inference_steps: 25,
+            image_guidance_scale: 1.5,
+            guidance_scale: 7.5
+          }
+        });
+        blob = await r.blob();
       } else {
-        parts.push({ text: promptText.trim() });
+        // ── text-to-image: FLUX.1-schnell ──────────────────────────────────
+        const r = await hfFetch(HF_TXT2IMG, { inputs: promptText.trim() });
+        blob = await r.blob();
       }
-
-      const body = {
-        contents: [{ parts }],
-        generationConfig: { responseModalities: ["IMAGE","TEXT"] }
-      };
-
-      const apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=" + GEMINI_KEY;
-      const r = await fetch(apiUrl, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
-
-      if(!r.ok){
-        const errData = await r.json().catch(()=>({}));
-        throw new Error(errData?.error?.message || `Erro da API: ${r.status}`);
-      }
-
-      const data = await r.json();
-      const imagePart = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-      if(!imagePart) throw new Error("Nenhuma imagem retornada pela API. Tente novamente.");
-
-      const imgDataUrl = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
-      const imgBlob = await fetch(imgDataUrl).then(res => res.blob());
-      setResult(URL.createObjectURL(imgBlob));
+      if (!blob || blob.size < 1000) throw new Error("Imagem inválida. Tente novamente.");
+      setResult(URL.createObjectURL(blob));
       setStage("idle");
     } catch(e){
-      showToast("Erro: "+e.message,"error");
+      showToast("Erro: " + e.message, "error");
       setStage("idle");
     }
     setLoading(false);
