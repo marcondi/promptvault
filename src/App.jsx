@@ -572,28 +572,47 @@ const GeradorImg = ({setRoute, userId, showToast}) => {
 
   const generate = async () => {
     if(!promptText.trim()){ showToast("Escreva ou selecione um prompt","error"); return; }
+    if(!GEMINI_KEY){ showToast("VITE_GEMINI_KEY não configurada","error"); return; }
     setLoading(true); setStage("loading"); setResult(null);
     try {
-      // Pollinations.ai — GET é o único endpoint suportado
-      // Trunca para 500 chars e ativa enhance=true para prompts longos
-      const prompt = promptText.trim().slice(0, 500);
-      const encoded = encodeURIComponent(prompt);
-      const seed = Math.floor(Math.random() * 999999);
-      const url = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&model=flux&enhance=true`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 90000);
-      const r = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!r.ok) throw new Error(`Servidor retornou ${r.status}. Tente novamente.`);
-      const contentType = r.headers.get("content-type") || "";
-      if (!contentType.startsWith("image/")) throw new Error("Resposta inesperada do servidor. Tente novamente.");
-      const blob = await r.blob();
-      if (blob.size < 1000) throw new Error("Imagem inválida. Tente um prompt diferente.");
-      setResult(URL.createObjectURL(blob));
+      // Monta as partes da requisição
+      const parts = [];
+
+      // Se houver foto de referência, envia como inlineData antes do prompt
+      if(photoFile) {
+        const b64 = await toBase64(photoFile);
+        parts.push({ inlineData: { mimeType: photoFile.type, data: b64 } });
+        // Instrui o modelo a usar a pessoa da foto como referência
+        parts.push({ text: `Use the person in the reference photo above as the subject. Apply the following style/scene to them:\n\n${promptText.trim()}` });
+      } else {
+        parts.push({ text: promptText.trim() });
+      }
+
+      const body = {
+        contents: [{ parts }],
+        generationConfig: { responseModalities: ["IMAGE","TEXT"] }
+      };
+
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${GEMINI_KEY}`,
+        { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) }
+      );
+
+      if(!r.ok){
+        const errData = await r.json().catch(()=>({}));
+        throw new Error(errData?.error?.message || `Erro da API: ${r.status}`);
+      }
+
+      const data = await r.json();
+      const imagePart = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+      if(!imagePart) throw new Error("Nenhuma imagem retornada pela API. Tente novamente.");
+
+      const imgDataUrl = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
+      const imgBlob = await fetch(imgDataUrl).then(res => res.blob());
+      setResult(URL.createObjectURL(imgBlob));
       setStage("idle");
     } catch(e){
-      const msg = e.name === "AbortError" ? "Tempo esgotado (90s). Tente novamente." : e.message;
-      showToast("Erro: "+msg,"error");
+      showToast("Erro: "+e.message,"error");
       setStage("idle");
     }
     setLoading(false);
