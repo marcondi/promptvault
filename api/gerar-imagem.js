@@ -1,21 +1,12 @@
 /**
- * Vercel Serverless Function — Proxy para HF Inference API
- * Caminho: /api/gerar-imagem.js
+ * Vercel Serverless Function — Proxy para HF Inference Providers
+ * Caminho: api/gerar-imagem.js
  *
- * Evita CORS: o browser chama este endpoint (mesmo domínio),
- * e o servidor chama a HF sem restrições.
- *
- * Body esperado (JSON):
- *   { prompt: string, image?: string (base64 jpeg), mimeType?: string }
+ * REQUISITO: token HF fine-grained com permissão
+ * "Make calls to Inference Providers" habilitada.
  */
 
-// Modelo img2img (com foto de referência)
-const HF_IMG2IMG = "https://api-inference.huggingface.co/models/timbrooks/instruct-pix2pix";
-// Modelo text-to-image (sem foto)
-const HF_TXT2IMG = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell";
-
 export default async function handler(req, res) {
-  // Permite apenas POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -30,37 +21,40 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Campo 'prompt' obrigatório" });
   }
 
-  const headers = {
-    "Authorization": "Bearer " + HF_KEY,
-    "Content-Type": "application/json",
-    "x-wait-for-model": "true"   // aguarda modelo carregar em vez de retornar 503
-  };
-
   try {
     let hfRes;
 
     if (image) {
-      // ── img2img: instruct-pix2pix ───────────────────────────────────────
-      hfRes = await fetch(HF_IMG2IMG, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          inputs: image,
-          parameters: {
+      // ── img2img via fal-ai (suporta instruct-pix2pix) ────────────────────
+      // Endpoint novo: router.huggingface.co
+      const imageBuffer = Buffer.from(image, "base64");
+
+      hfRes = await fetch(
+        "https://router.huggingface.co/fal-ai/models/timbrooks/instruct-pix2pix",
+        {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer " + HF_KEY,
+            "Content-Type": "application/json",
+            "x-wait-for-model": "true"
+          },
+          body: JSON.stringify({
+            image_url: "data:image/jpeg;base64," + image,
             prompt,
-            num_inference_steps: 25,
+            num_inference_steps: 20,
             image_guidance_scale: 1.5,
             guidance_scale: 7.5
-          }
-        })
-      });
+          })
+        }
+      );
+
+      // Se fal-ai não suportar, faz fallback para text-to-image com FLUX
+      if (!hfRes.ok) {
+        console.warn("img2img falhou (" + hfRes.status + "), usando FLUX text-to-image");
+        hfRes = await textToImage(prompt, HF_KEY);
+      }
     } else {
-      // ── text-to-image: FLUX.1-schnell ───────────────────────────────────
-      hfRes = await fetch(HF_TXT2IMG, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ inputs: prompt })
-      });
+      hfRes = await textToImage(prompt, HF_KEY);
     }
 
     if (!hfRes.ok) {
@@ -70,7 +64,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Retorna a imagem como base64 para o frontend
+    // Retorna imagem como base64
     const buffer = await hfRes.arrayBuffer();
     const base64 = Buffer.from(buffer).toString("base64");
     const contentType = hfRes.headers.get("content-type") || "image/jpeg";
@@ -80,4 +74,20 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
+}
+
+async function textToImage(prompt, HF_KEY) {
+  // FLUX.1-schnell via novo endpoint router.huggingface.co
+  return fetch(
+    "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
+    {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + HF_KEY,
+        "Content-Type": "application/json",
+        "x-wait-for-model": "true"
+      },
+      body: JSON.stringify({ inputs: prompt })
+    }
+  );
 }
