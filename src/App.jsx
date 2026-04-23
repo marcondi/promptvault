@@ -620,30 +620,23 @@ const GeradorImg = ({setRoute, userId, showToast}) => {
 
   const generate = async () => {
     if(!promptText.trim()){ showToast("Escreva ou selecione um prompt","error"); return; }
-    if(!HF_KEY){ showToast("VITE_HF_KEY não configurada no Vercel","error"); return; }
     setLoading(true); setStage("loading"); setResult(null);
     try {
-      let blob;
+      // Chama a Vercel Function (proxy) — sem CORS, sem restrições de browser
+      const body = { prompt: promptText.trim() };
       if (photoFile) {
-        // ── img2img: instruct-pix2pix ──────────────────────────────────────
-        // Envia a imagem em base64 + o prompt como instrução de transformação
-        const b64 = await resizeAndEncode(photoFile); // redimensiona para 512px antes de enviar
-        const r = await hfFetch(HF_IMG2IMG, {
-          inputs: b64,
-          parameters: {
-            prompt: promptText.trim(),
-            num_inference_steps: 25,
-            image_guidance_scale: 1.5,
-            guidance_scale: 7.5
-          }
-        });
-        blob = await r.blob();
-      } else {
-        // ── text-to-image: FLUX.1-schnell ──────────────────────────────────
-        const r = await hfFetch(HF_TXT2IMG, { inputs: promptText.trim() });
-        blob = await r.blob();
+        body.image = await resizeAndEncode(photoFile);
       }
-      if (!blob || blob.size < 1000) throw new Error("Imagem inválida. Tente novamente.");
+      const r = await fetch("/api/gerar-imagem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Erro do servidor");
+      if (!data.image) throw new Error("Nenhuma imagem retornada");
+      const byteArr = Uint8Array.from(atob(data.image), c => c.charCodeAt(0));
+      const blob = new Blob([byteArr], { type: data.mimeType || "image/jpeg" });
       setResult(URL.createObjectURL(blob));
       setStage("idle");
     } catch(e){
